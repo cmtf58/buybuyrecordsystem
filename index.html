@@ -7,7 +7,7 @@
     <style>
         :root { --font-size: 16px; }
         body { font-family: Arial, sans-serif; font-size: var(--font-size); margin: 20px; background-color: #f5f7fa; color: #333; }
-        .container { max-width: 1300px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .container { max-width: 1800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .hidden { display: none !important; }
         .flex-btn { display: flex; gap: 10px; margin-bottom: 20px; align-items: center; flex-wrap: wrap; }
         button { padding: 8px 15px; font-size: var(--font-size); cursor: pointer; border: none; border-radius: 4px; background-color: #2ecc71; color: white; }
@@ -43,8 +43,11 @@
         .badge-received { background: #d4edda; color: #155724; }
         .badge-total { background: #e2e3e5; color: #383d41; }
 
+        /* 多選計算面板樣式 */
+        .select-summary-box { background: #ebf8ff; border: 1px solid #bee3f8; color: #2b6cb0; padding: 12px 15px; border-radius: 6px; margin-bottom: 15px; font-size: 0.95rem; display: flex; gap: 15px; flex-wrap: wrap; align-items: center; }
+
         /* 首次使用設定版面 */
-        .setup-container { display: flex; gap: 30px; max-width: 1250px; margin: 30px auto; align-items: flex-start; }
+        .setup-container { display: flex; gap: 30px; max-width: 1450px; margin: 30px auto; align-items: flex-start; }
         .setup-box { flex: 1; background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); border: 1px solid #e1e8ed; position: sticky; top: 20px; }
         .tutorial-box { flex: 1.4; background: #f8f9fa; padding: 30px; border-radius: 8px; border-left: 5px solid #2ecc71; box-shadow: 0 4px 15px rgba(0,0,0,0.02); max-height: 90vh; overflow-y: auto; }
         .highlight { background-color: #fff3cd; color: #856404; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-family: monospace; }
@@ -124,7 +127,7 @@ function doPost(e) {
 
     <div id="main-section" class="hidden">
         <div class="flex-btn">
-            <h2>Buybuy Record System</h2>
+            <h2>🛍️ Buybuy Record System</h2>
             <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
                 <span>字體大小：</span>
                 <button onclick="adjustFontSize(-2)" style="padding: 5px 12px; font-weight: bold; background-color: #34495e;">-</button>
@@ -134,7 +137,9 @@ function doPost(e) {
             </div>
         </div>
 
+        <span style="padding:4px 6px; background:#fff; border:1px solid #cbd5e0; border-radius:4px; font-weight:bold;">*** 除特別註明外，所有金額均以港幣計算。***</span><br><br>
         <div class="flex-btn">
+            <br>
             <button onclick="openOrderModal()">➕ 新增購物單</button>
             <button onclick="openCurrencyModal()">💱 管理貨幣</button>
             <button onclick="openFilterModal()" style="background-color: #3498db;">🔍 篩選購物單 / 貨品</button>
@@ -148,21 +153,29 @@ function doPost(e) {
             <button class="tab-btn active" id="tab-btn-overview" onclick="switchTab('overview')">📋 總覽主頁</button>
         </div>
 
+        <!-- 總覽面板 -->
         <div id="panel-overview" class="tab-panel active">
             <div id="filter-tag-container" style="margin-bottom: 10px; display: flex; gap: 5px; flex-wrap: wrap;"></div>
+            
+            <!-- 多選自動計算顯示面板 -->
+            <div id="multi-select-summary" class="select-summary-box">
+                已選擇 <strong>0</strong> 個購物單，費用：<strong>$0.00</strong>，運費：<strong>$0.00</strong>，總支出（連運費）：<strong>$0.00</strong>
+            </div>
+
             <div style="overflow-x: auto;">
                 <table>
                     <thead>
                         <tr>
+                            <th style="width: 40px; text-align: center;"><input type="checkbox" id="th-select-all" onclick="toggleSelectAllOrders(this)"></th>
                             <th>新增日期</th>
                             <th>購物單名稱</th>
                             <th>預支金額</th>
+                            <th>費用</th>
                             <th>運費</th>    
-                            <th>總價（含運費）</th>                        
+                            <th>總支出（連運費）</th>                        
                             <th>物流狀態</th>
                             <th>電子發票</th>
-                            <th>已交單</th>
-                            <th>已Claim錢</th>                        
+                            <th>已交單 | 已報銷</th>                        
                             <th>操作</th>
                         </tr>
                     </thead>
@@ -171,6 +184,7 @@ function doPost(e) {
             </div>
         </div>
 
+        <!-- 購物單詳細面板 -->
         <div id="panel-order-detail" class="tab-panel">
             <div style="background:#edf2f7; padding:15px; border-radius:6px; margin-bottom:15px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
@@ -188,10 +202,9 @@ function doPost(e) {
                     <thead>
                         <tr>
                             <th>貨物名稱</th>
-                            <th>金額 (原始)</th>
+                            <th>金額</th>
                             <th>金額 (港幣)</th>
                             <th>網購平台</th>
-                            <th>物流方式</th>
                             <th>貨物物流</th>
                             <th>更新日期</th>
                             <th>操作</th>
@@ -204,6 +217,7 @@ function doPost(e) {
     </div>
 </div>
 
+<!-- 新增/修改購物單彈窗 -->
 <div id="order-modal" class="modal hidden">
     <div class="modal-content">
         <h3 id="order-modal-title">新增購物單</h3>    
@@ -212,19 +226,32 @@ function doPost(e) {
         <div class="form-group"><label>預支金額（港幣）</label><input type="number" id="order-advance-pay" value="0" min="0" step="0.1"></div>                
         <div class="form-group"><label>運費（港幣）</label><input type="number" id="order-shipping-fee" value="0" min="0" step="0.1"></div>        
         <div class="form-group">
+            <label>物流方式*</label>
+            <select id="order-logistics-type">
+                <option value="官方直運">官方直運</option>
+                <option value="官方集運">官方集運</option>
+                <option value="私人集運">私人集運</option>
+            </select>
+        </div>
+        <div class="form-group">
             <label>物流狀態*</label>
-            <select id="order-logistics-status"><option value="未收貨">未收貨</option><option value="已收貨">已收貨</option></select>
+            <select id="order-logistics-status">
+		<option value="未齊貨">未齊貨</option>
+		<option value="已發貨">已發貨</option>
+		<option value="待收貨">待收貨</option>
+		<option value="已收貨">已收貨</option>
+           </select>
         </div>
         <div class="form-group">
             <label>電子發票*</label>
             <select id="order-invoice-status">
-                <option value="未問、待收貨">未問、待收貨</option>
+                <option value="未問">未問</option>
                 <option value="已問、待覆">已問、待覆</option>
                 <option value="已收">已收</option>
             </select>
         </div>
         <div class="form-group"><label><input type="checkbox" id="order-submitted" style="width:auto;"> 已交單</label></div>
-        <div class="form-group"><label><input type="checkbox" id="order-claimed" style="width:auto;"> 已Claim錢</label></div>
+        <div class="form-group"><label><input type="checkbox" id="order-claim" style="width:auto;"> 已報銷</label></div>
         <div class="flex-btn" style="justify-content: flex-end; margin-top: 20px;">
             <button class="secondary" onclick="closeOrderModal()">取消</button>
             <button onclick="saveOrder()">儲存購物單</button>
@@ -243,15 +270,17 @@ function doPost(e) {
             <label>物流狀態</label>
             <select id="filter-logistics">
                 <option value="">全部</option>
-                <option value="未收貨">未收貨</option>
-                <option value="已收貨">已收貨</option>
+		<option value="未齊貨">未齊貨</option>
+		<option value="已發貨">已發貨</option>
+		<option value="待收貨">待收貨</option>
+		<option value="已收貨">已收貨</option>
             </select>
         </div>
         <div class="form-group">
             <label>電子發票</label>
             <select id="filter-invoice">
                 <option value="">全部</option>
-                <option value="未問、待收貨">未問、待收貨</option>
+                <option value="未問">未問</option>
                 <option value="已問、待覆">已問、待覆</option>
                 <option value="已收">已收</option>
             </select>
@@ -265,11 +294,11 @@ function doPost(e) {
             </select>
         </div>
         <div class="form-group">
-            <label>已Claim錢</label>
-            <select id="filter-claimed">
+            <label>已報銷</label>
+            <select id="filter-claim">
                 <option value="">全部</option>
-                <option value="true">僅顯示已Claim錢</option>
-                <option value="false">僅顯示未Claim錢</option>
+                <option value="true">僅顯示已報銷</option>
+                <option value="false">僅顯示未報銷</option>
             </select>
         </div>
         <div class="flex-btn" style="justify-content: flex-end; margin-top: 20px;">
@@ -280,6 +309,7 @@ function doPost(e) {
     </div>
 </div>
 
+<!-- 新增/修改貨物明細彈窗 -->
 <div id="item-modal" class="modal hidden">
     <div class="modal-content">
         <h3 id="item-modal-title">新增貨物明細</h3>
@@ -303,15 +333,12 @@ function doPost(e) {
                 	<option value="美亞">美亞</option>
 		</select>
         </div>
-        <div class="form-group">
-            <label>物流方式*</label>
-            <select id="item-logistics-type"><option value="官直">官直</option><option value="客集">客集</option><option value="私集">私集</option></select>
-        </div>
+        <!-- 更新：已將物流方式欄位完全由貨物彈窗中移除 -->
         <div class="form-group">
             <label>貨物物流狀態*</label>
             <select id="item-logistics-status">
                 <option value="未發貨">未發貨</option>
-                <option value="Job已發貨">已發貨</option>
+                <option value="已發貨">已發貨</option>
                 <option value="已收貨">已收貨</option>
             </select>
         </div>
@@ -340,12 +367,12 @@ function doPost(e) {
     let config = { url: '', password: '' };
     let sysData = { currencies: ["人民幣", "港幣"], orders: [] };
     
-    let currentActiveTab = 'overview'; // 當前選中的 Tab ID ('overview' 或 訂單ID)
-    let openedTabs = [];              // 目前已經打開的訂單 Tab ID 陣列
-    let currentEditOrderId = null;     // 用於建立/修改訂單主體時暫存
+    let currentActiveTab = 'overview'; 
+    let openedTabs = [];              
+    let currentEditOrderId = null;     
 
-    // 儲存目前篩選條件的物件
-    let currentFilters = { keyword: '', logistics: '', invoice: '', submitted: '', claimed: '' };
+    let currentFilters = { keyword: '', logistics: '', invoice: '', submitted: '', claim: '' };
+    let selectedOrderIds = [];
 
     window.onload = function() {
         const savedId = localStorage.getItem('order_sys_google_id');
@@ -381,16 +408,11 @@ function doPost(e) {
         if (document.getElementById('current-size-display')) { document.getElementById('current-size-display').innerText = currentFontSize + 'px'; }
     }
 
-    /* 觸發檔案選擇器 */
-    function triggerConfigImport() {
-        document.getElementById('import-config-file').click();
-    }
+    function triggerConfigImport() { document.getElementById('import-config-file').click(); }
 
-    /* 處理匯入設定檔檔案 */
     function handleConfigImport(event) {
         const file = event.target.files[0];
         if (!file) return;
-
         const reader = new FileReader();
         reader.onload = async function(e) {
             try {
@@ -400,11 +422,7 @@ function doPost(e) {
                     document.getElementById('sys-pass').value = importedConfig.password;
                     document.getElementById('setup-msg').style.color = "green";
                     document.getElementById('setup-msg').innerText = "✅ 設定檔匯入成功！正在嘗試登入...";
-                    
-                    // 清空 file input 的值以允許重複匯入同名檔案
                     event.target.value = "";
-                    
-                    // 自動執行連線登入
                     await saveSetup();
                 } else {
                     document.getElementById('setup-msg').style.color = "red";
@@ -473,11 +491,8 @@ function doPost(e) {
     }
     function getTodayString() { return new Date().toISOString().split('T')[0]; }
 
-    /* ================= Tab 頁籤管理邏輯 ================= */
     function switchTab(tabId) {
         currentActiveTab = tabId;
-        
-        // 切換按鈕高亮
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         if(tabId === 'overview') {
             document.getElementById('tab-btn-overview').classList.add('active');
@@ -498,7 +513,6 @@ function doPost(e) {
             openedTabs.push(orderId);
             const order = sysData.orders.find(o => o.id === orderId);
             if(!order) return;
-            
             const btn = document.createElement('button');
             btn.className = 'tab-btn';
             btn.id = `tab-btn-${orderId}`;
@@ -510,17 +524,13 @@ function doPost(e) {
     }
 
     function closeTabInline(e, orderId) {
-        e.stopPropagation(); // 防止觸發切換 Tab
+        e.stopPropagation(); 
         const btn = document.getElementById(`tab-btn-${orderId}`);
         if(btn) btn.remove();
         openedTabs = openedTabs.filter(id => id !== orderId);
-        
-        if(currentActiveTab === orderId) {
-            switchTab('overview');
-        }
+        if(currentActiveTab === orderId) { switchTab('overview'); }
     }
 
-    /* 關閉所有開啟的購物單分頁，返回總覽主頁 */
     function closeAllTabs() {
         openedTabs.forEach(orderId => {
             const btn = document.getElementById(`tab-btn-${orderId}`);
@@ -530,43 +540,39 @@ function doPost(e) {
         switchTab('overview');
     }
 
-    /* ================= 篩選視窗管理邏輯 ================= */
     function openFilterModal() {
         document.getElementById('filter-keyword').value = currentFilters.keyword;
         document.getElementById('filter-logistics').value = currentFilters.logistics;
         document.getElementById('filter-invoice').value = currentFilters.invoice;
         document.getElementById('filter-submitted').value = currentFilters.submitted;
-        document.getElementById('filter-claimed').value = currentFilters.claimed;
+        document.getElementById('filter-claim').value = currentFilters.claim;
         document.getElementById('filter-modal').classList.remove('hidden');
     }
 
-    function closeFilterModal() {
-        document.getElementById('filter-modal').classList.add('hidden');
-    }
+    function closeFilterModal() { document.getElementById('filter-modal').classList.add('hidden'); }
 
     function applyFilter() {
         currentFilters.keyword = document.getElementById('filter-keyword').value.trim();
         currentFilters.logistics = document.getElementById('filter-logistics').value;
         currentFilters.invoice = document.getElementById('filter-invoice').value;
         currentFilters.submitted = document.getElementById('filter-submitted').value;
-        currentFilters.claimed = document.getElementById('filter-claimed').value;
-        
+        currentFilters.claim = document.getElementById('filter-claim').value;
         closeFilterModal();
+        selectedOrderIds = []; 
         renderOverviewTable();
     }
 
     function resetFilter() {
-        currentFilters = { keyword: '', logistics: '', invoice: '', submitted: '', claimed: '' };
+        currentFilters = { keyword: '', logistics: '', invoice: '', submitted: '', claim: '' };
         closeFilterModal();
+        selectedOrderIds = [];
         renderOverviewTable();
     }
 
-    // 渲染提示當前處於篩選狀態的標籤
     function updateFilterTags() {
         const container = document.getElementById('filter-tag-container');
         if(!container) return;
         container.innerHTML = '';
-
         let hasActiveFilter = false;
         const addTag = (text) => {
             hasActiveFilter = true;
@@ -575,13 +581,11 @@ function doPost(e) {
             span.innerText = text;
             container.appendChild(span);
         };
-
         if(currentFilters.keyword) addTag(`關鍵字: ${currentFilters.keyword}`);
         if(currentFilters.logistics) addTag(`物流: ${currentFilters.logistics}`);
         if(currentFilters.invoice) addTag(`發票: ${currentFilters.invoice}`);
         if(currentFilters.submitted) addTag(`交單: ${currentFilters.submitted === 'true' ? '已交' : '未交'}`);
-        if(currentFilters.claimed) addTag(`Claim錢: ${currentFilters.claimed === 'true' ? '已Claim' : '未Claim'}`);
-
+        if(currentFilters.claim) addTag(`報銷錢: ${currentFilters.claim === 'true' ? '已報銷' : '未報銷'}`);
         if(hasActiveFilter) {
             const clearBtn = document.createElement('button');
             clearBtn.style.cssText = "padding: 2px 8px; font-size: 0.8rem; background-color: #e74c3c; color: white; border-radius: 4px;";
@@ -590,40 +594,88 @@ function doPost(e) {
             container.appendChild(clearBtn);
         }
     }
+    
+    function handleOrderSelect(chk, orderId) {
+        if (chk.checked) {
+            if (!selectedOrderIds.includes(orderId)) selectedOrderIds.push(orderId);
+        } else {
+            selectedOrderIds = selectedOrderIds.filter(id => id !== orderId);
+        }
+        const allVisibleCheckboxes = document.querySelectorAll('.order-chk');
+        const allChecked = Array.from(allVisibleCheckboxes).every(c => c.checked);
+        document.getElementById('th-select-all').checked = (allVisibleCheckboxes.length > 0 && allChecked);
+        calculateSelectedTotal();
+    }
 
-    /* ================= 渲染主頁數據（已升級：支援購物單名稱＋貨物名稱雙重搜尋） ================= */
+    function toggleSelectAllOrders(masterChk) {
+        const checkboxes = document.querySelectorAll('.order-chk');
+        checkboxes.forEach(chk => {
+            chk.checked = masterChk.checked;
+            const orderId = chk.getAttribute('data-id');
+            if (masterChk.checked) {
+                if (!selectedOrderIds.includes(orderId)) selectedOrderIds.push(orderId);
+            } else {
+                selectedOrderIds = selectedOrderIds.filter(id => id !== orderId);
+            }
+        });
+        calculateSelectedTotal();
+    }
+
+    function calculateSelectedTotal() {
+        let orderCount = 0;
+        let totalItemsHKD = 0;
+        let totalShippingFee = 0;
+        let totalExpenses = 0;
+
+        sysData.orders.forEach(order => {
+            if (selectedOrderIds.includes(order.id)) {
+                orderCount++;
+                let currentOrderItemsSum = 0;
+                (order.items || []).forEach(item => {
+                    currentOrderItemsSum += parseFloat(item.priceHKD) || 0;
+                });
+                let currentShipping = parseFloat(order.shippingFee) || 0;
+                
+                totalItemsHKD += currentOrderItemsSum;
+                totalShippingFee += currentShipping;
+                totalExpenses += (currentOrderItemsSum + currentShipping);
+            }
+        });
+
+        document.getElementById('multi-select-summary').innerHTML = `
+            已選擇 <strong>${orderCount}</strong> 個購物單，
+            費用：<strong>$${totalItemsHKD.toFixed(2)}</strong>，
+            運費：<strong>$${totalShippingFee.toFixed(2)}</strong>，
+            總支出（連運費）：<strong>$${totalExpenses.toFixed(2)}</strong>
+        `;
+    }
+
+    /* 渲染首頁表格 - 已更新為包含物流方式 */
     function renderOverviewTable() {
         updateFilterTags();
+        document.getElementById('th-select-all').checked = false;
         const tbody = document.getElementById('order-list-body'); tbody.innerHTML = '';
         
-        // 1. 篩選與排序邏輯
         let filteredOrders = (sysData.orders || []).filter(order => {
-            // 雙重關鍵字搜尋邏輯
             if (currentFilters.keyword) {
                 const searchLower = currentFilters.keyword.toLowerCase();
-                // 檢查購物單標題
                 const matchOrderName = order.name.toLowerCase().includes(searchLower);
-                // 檢查底下的貨品明細名稱
                 const matchItemName = (order.items || []).some(item => item.name && item.name.toLowerCase().includes(searchLower));
-                
-                // 兩者皆無符合，則過濾掉
                 if (!matchOrderName && !matchItemName) return false;
             }
-            
             if (currentFilters.logistics && order.logisticsStatus !== currentFilters.logistics) return false;
             if (currentFilters.invoice && (order.invoiceStatus || "未問、待收貨") !== currentFilters.invoice) return false;
             if (currentFilters.submitted !== '') {
                 const isSub = currentFilters.submitted === 'true';
                 if (!!order.submitted !== isSub) return false;
             }
-            if (currentFilters.claimed !== '') {
-                const isClaimed = currentFilters.claimed === 'true';
-                if (!!order.claimed !== isClaimed) return false;
+            if (currentFilters.claim !== '') {
+                const isclaim = currentFilters.claim === 'true';
+                if (!!order.claim !== isclaim) return false;
             }
             return true;
         });
 
-        // 2. 以日期由新到舊排序
         filteredOrders.sort((a, b) => {
             if ((a.date || '') < (b.date || '')) return 1;
             if ((a.date || '') > (b.date || '')) return -1;
@@ -631,7 +683,8 @@ function doPost(e) {
         });
 
         if (filteredOrders.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="10" style="text-align:center; color:#999; padding:30px;">沒有符合篩選條件的購物單或貨品。</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="12" style="text-align:center; color:#999; padding:30px;">沒有符合篩選條件的購物單或貨品。</td></tr>`;
+            calculateSelectedTotal();
             return;
         }
 
@@ -641,38 +694,51 @@ function doPost(e) {
                 itemsHKD += parseFloat(item.priceHKD) || 0;
                 let status = item.itemLogisticsStatus || '未發貨';
                 if (status === '未發貨') unshipped++;
-                else if (status === '已發貨' || status === 'Job已發貨') shipped++;
+                else if (status === '已發貨' || status === '已發貨') shipped++;
                 else if (status === '已收貨') received++;
             });
             let shippingFee = parseFloat(order.shippingFee) || 0;
             let totalHKD = itemsHKD + shippingFee;
 
+            const isChecked = selectedOrderIds.includes(order.id) ? 'checked' : '';
+            
+            let logisticsType = order.logisticsType || '官方直運'; 
+
             const tr = document.createElement('tr');
             tr.innerHTML = `
+                <td style="text-align:center;"><input type="checkbox" class="order-chk" data-id="${order.id}" ${isChecked} onclick="handleOrderSelect(this, '${order.id}')"></td>
                 <td>${order.date || '-'}</td>
                 <td>
                     <strong style="color:#2980b9; cursor:pointer; text-decoration:underline;" onclick="openOrderTab('${order.id}')">${order.name}</strong>
                     <br>
-                    <span class="stats-badge badge-unshipped">未發:${unshipped}</span>
-                    <span class="stats-badge badge-shipped">已發:${shipped}</span>
-                    <span class="stats-badge badge-received">已收:${received}</span>
+                    <span class="stats-badge badge-unshipped">未發：${unshipped}</span>
+                    <span class="stats-badge badge-shipped">已發：${shipped}</span>
+                    <span class="stats-badge badge-received">已收：${received}</span>
                 </td>
                 <td>$${(parseFloat(order.advancePay)||0).toFixed(2)}</td>
+                <td>$${itemsHKD.toFixed(2)}</td>
                 <td>$${shippingFee.toFixed(2)}</td>
                 <td><strong>$${totalHKD.toFixed(2)}</strong></td>
-                <td>${order.logisticsStatus}</td>
-                <td>${order.invoiceStatus || "未問、待收貨"}</td>
-                <td>${order.submitted ? '✅' : '❌'}</td>
-                <td>${order.claimed ? '✅' : '❌'}</td>
+                <td><span style="padding:4px 6px; background:#fff; border:1px solid #cbd5e0; border-radius:4px; font-weight:bold;">${logisticsType}</span>&nbsp;<span style="padding:4px 6px; background:#fff; border:1px solid #cbd5e0; border-radius:4px; font-weight:bold;">${order.logisticsStatus}</span></td>
+		<td><span style="padding:4px 6px; background:#fff; border:1px solid #cbd5e0; border-radius:4px; font-weight:bold;">${order.invoiceStatus || "未問"}</span></td>
+                <td>${order.submitted ? '✅' : '❌'} | ${order.claim ? '✅' : '❌'}</td>
                 <td>
                     <button onclick="openOrderTab('${order.id}')" style="background-color:#2980b9;">查看貨物 (${order.items.length})</button>
                     <button class="danger" onclick="deleteOrder('${order.id}')">刪除</button>
                 </td>`;
             tbody.appendChild(tr);
         });
+
+        const allVisibleCheckboxes = document.querySelectorAll('.order-chk');
+        if(allVisibleCheckboxes.length > 0) {
+            const allChecked = Array.from(allVisibleCheckboxes).every(c => c.checked);
+            document.getElementById('th-select-all').checked = allChecked;
+        }
+
+        calculateSelectedTotal();
     }
 
-    /* ================= 渲染單個購物單的貨物明細面版 ================= */
+    /* 渲染單個購物單的明細 - 已更新 */
     function renderOrderDetailPanel(orderId) {
         const order = sysData.orders.find(o => o.id === orderId);
         if(!order) { switchTab('overview'); return; }
@@ -690,14 +756,15 @@ function doPost(e) {
             <span><b>運費港幣：</b>$${shippingFee.toFixed(2)}</span>
             <span><b>貨物港幣：</b>$${itemsHKD.toFixed(2)}</span>
             <span><b>合併總價：</b><strong>$${totalHKD.toFixed(2)}</strong></span>
+            <span><b>物流方式：</b><strong style="color:#d35400;">${order.logisticsType || '官方直運'}</strong></span>
             <span><b>全單物流：</b>${order.logisticsStatus}</span>
             <span><b>電子發票：</b>${order.invoiceStatus || "未問、待收貨"}</span>
-            <span><b>狀態標記：</b>${order.submitted ? '✅ 已交單' : '❌ 未交單'} | ${order.claimed ? '✅ 已Claim錢' : '❌ 未Claim' }</span>
+            <span><b>狀態標記：</b>${order.submitted ? '✅ 已交單' : '❌ 未交單'} | ${order.claim ? '✅ 已報銷' : '❌ 未報銷' }</span>
         `;
 
         const tbody = document.getElementById('order-items-body'); tbody.innerHTML = '';
         if(!order.items || order.items.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; color:#999; padding:30px;">目前沒有任何貨物明細，請點擊右上方「➕ 新增單項貨物」開始建立。</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#999; padding:30px;">目前沒有任何貨物明細，請點擊右上方「➕ 新增單項貨物」開始建立。</td></tr>`;
             return;
         }
 
@@ -708,7 +775,6 @@ function doPost(e) {
                 <td>${item.price} ${item.currency}</td>
                 <td>$${(parseFloat(item.priceHKD)||0).toFixed(2)}</td>
                 <td>${item.platform}</td>
-                <td>${item.logisticsType}</td>
                 <td><span style="padding:4px 8px; background:#e0f7fa; border-radius:4px; font-weight:bold; color:#006064;">${item.itemLogisticsStatus || '未發貨'}</span></td>
                 <td style="color:#666; font-size:0.85rem;">${item.updateDate || order.date}</td>
                 <td>
@@ -719,7 +785,7 @@ function doPost(e) {
         });
     }
 
-    /* ================= 購物單主體增刪改 ================= */
+    /* 購物單資料開關窗與儲存 - 包含物流方式 */
     function openOrderModal(id = null) {
         currentEditOrderId = id;
         if(id) {
@@ -729,20 +795,22 @@ function doPost(e) {
             document.getElementById('order-date').value = o.date || getTodayString();
             document.getElementById('order-advance-pay').value = o.advancePay || 0;
             document.getElementById('order-shipping-fee').value = o.shippingFee || 0;
+            document.getElementById('order-logistics-type').value = o.logisticsType || "官方直運";
             document.getElementById('order-logistics-status').value = o.logisticsStatus;
             document.getElementById('order-invoice-status').value = o.invoiceStatus || "未問、待收貨";
             document.getElementById('order-submitted').checked = !!o.submitted;
-            document.getElementById('order-claimed').checked = !!o.claimed;
+            document.getElementById('order-claim').checked = !!o.claim;
         } else {
             document.getElementById('order-modal-title').innerText = "➕ 新增購物單";
             document.getElementById('order-name').value = "";
             document.getElementById('order-date').value = getTodayString();
             document.getElementById('order-advance-pay').value = 0;
             document.getElementById('order-shipping-fee').value = 0;
+            document.getElementById('order-logistics-type').value = "官方直運";
             document.getElementById('order-logistics-status').value = "未收貨";
             document.getElementById('order-invoice-status').value = "未問、待收貨";
             document.getElementById('order-submitted').checked = false;
-            document.getElementById('order-claimed').checked = false;
+            document.getElementById('order-claim').checked = false;
         }
         document.getElementById('order-modal').classList.remove('hidden');
     }
@@ -756,24 +824,25 @@ function doPost(e) {
 
         const advancePay = parseFloat(document.getElementById('order-advance-pay').value) || 0;
         const shippingFee = parseFloat(document.getElementById('order-shipping-fee').value) || 0;
+        const logisticsType = document.getElementById('order-logistics-type').value; // 獲取物流方式
         const logisticsStatus = document.getElementById('order-logistics-status').value;
         const invoiceStatus = document.getElementById('order-invoice-status').value;
         const submitted = document.getElementById('order-submitted').checked;
-        const claimed = document.getElementById('order-claimed').checked;
+        const claim = document.getElementById('order-claim').checked;
 
         if(currentEditOrderId) {
             let o = sysData.orders.find(item => item.id === currentEditOrderId);
             o.name = name; o.date = oDate; o.advancePay = advancePay; o.shippingFee = shippingFee;
+            o.logisticsType = logisticsType; // 寫入
             o.logisticsStatus = logisticsStatus; o.invoiceStatus = invoiceStatus;
-            o.submitted = submitted; o.claimed = claimed;
-            // 更新已打開的 Tab 上文字
+            o.submitted = submitted; o.claim = claim;
             const tabBtn = document.getElementById(`tab-btn-${currentEditOrderId}`);
             if(tabBtn) tabBtn.innerHTML = `🛒 ${name} <span class="tab-close" onclick="closeTabInline(event, '${currentEditOrderId}')">✕</span>`;
         } else {
             const newId = 'id_' + Date.now();
             sysData.orders.push({
                 id: newId, date: oDate, name, advancePay, shippingFee,
-                logisticsStatus, invoiceStatus, submitted, claimed, items: []
+                logisticsType, logisticsStatus, invoiceStatus, submitted, claim, items: []
             });
             openOrderTab(newId);
         }
@@ -785,6 +854,7 @@ function doPost(e) {
     async function deleteOrder(id) {
         if(confirm("⚠️ 確定要刪除這筆購物單及底下的所有貨物嗎？")) {
             sysData.orders = sysData.orders.filter(o => o.id !== id);
+            selectedOrderIds = selectedOrderIds.filter(sId => sId !== id);
             const tabBtn = document.getElementById(`tab-btn-${id}`);
             if(tabBtn) tabBtn.remove();
             openedTabs = openedTabs.filter(tId => tId !== id);
@@ -793,12 +863,11 @@ function doPost(e) {
         }
     }
 
-    /* ================= 貨物明細 (單個項目彈窗增刪改) ================= */
+    /* 貨物明細開窗與儲存 */
     function openItemModal(index = null) {
         const order = sysData.orders.find(o => o.id === currentActiveTab);
         if(!order) return;
 
-        // 刷新貨幣下拉選單
         const selectCur = document.getElementById('item-currency'); selectCur.innerHTML = '';
         sysData.currencies.forEach(c => { selectCur.innerHTML += `<option value="${c}">${c}</option>`; });
 
@@ -811,14 +880,13 @@ function doPost(e) {
             document.getElementById('item-currency').value = item.currency || '人民幣';
             document.getElementById('item-price-hkd').value = item.priceHKD;
             document.getElementById('item-platform').value = item.platform || '淘寶';
-            document.getElementById('item-logistics-type').value = item.logisticsType || '官直';
             document.getElementById('item-logistics-status').value = item.itemLogisticsStatus || '未發貨';
             
             const savedDate = item.updateDate || order.date;
             document.getElementById('item-update-date-text').innerText = savedDate;
             document.getElementById('item-old-snapshot').value = JSON.stringify({
                 name: item.name, price: item.price, currency: item.currency, priceHKD: item.priceHKD,
-                platform: item.platform, logisticsType: item.logisticsType, itemLogisticsStatus: item.itemLogisticsStatus || '未發貨'
+                platform: item.platform, itemLogisticsStatus: item.itemLogisticsStatus || '未發貨'
             });
         } else {
             document.getElementById('item-modal-title').innerText = "➕ 新增貨物明細";
@@ -828,7 +896,6 @@ function doPost(e) {
             document.getElementById('item-currency').value = "人民幣";
             document.getElementById('item-price-hkd').value = "";
             document.getElementById('item-platform').value = "淘寶";
-            document.getElementById('item-logistics-type').value = "官直";
             document.getElementById('item-logistics-status').value = "未發貨";
             document.getElementById('item-update-date-text').innerText = getTodayString() + " (新項目)";
             document.getElementById('item-old-snapshot').value = "";
@@ -848,7 +915,6 @@ function doPost(e) {
 
         const currency = document.getElementById('item-currency').value;
         const platform = document.getElementById('item-platform').value;
-        const logisticsType = document.getElementById('item-logistics-type').value;
         const itemLogisticsStatus = document.getElementById('item-logistics-status').value;
         const idxStr = document.getElementById('item-edit-index').value;
         const todayStr = getTodayString();
@@ -863,16 +929,16 @@ function doPost(e) {
                 const old = JSON.parse(oldSnapshotStr);
                 if(old.name === name && old.price === price && old.currency === currency &&
                    old.priceHKD === priceHKD && old.platform === platform &&
-                   old.logisticsType === logisticsType && old.itemLogisticsStatus === itemLogisticsStatus) {
+                   old.itemLogisticsStatus === itemLogisticsStatus) {
                     hasChanged = false; 
                 }
             }
             if(!hasChanged) { finalUpdateDate = order.items[idx].updateDate || todayStr; }
 
-            order.items[idx] = { name, price, currency, priceHKD, platform, logisticsType, itemLogisticsStatus, updateDate: finalUpdateDate };
+            order.items[idx] = { name, price, currency, priceHKD, platform, itemLogisticsStatus, updateDate: finalUpdateDate };
         } else {
             if(!order.items) order.items = [];
-            order.items.push({ name, price, currency, priceHKD, platform, logisticsType, itemLogisticsStatus, updateDate: todayStr });
+            order.items.push({ name, price, currency, priceHKD, platform, itemLogisticsStatus, updateDate: todayStr });
         }
 
         closeItemModal(); renderOrderDetailPanel(currentActiveTab); await saveCloudData();
@@ -888,7 +954,6 @@ function doPost(e) {
         }
     }
 
-    /* ================= 貨幣管理 ================= */
     function openCurrencyModal() {
         const ul = document.getElementById('currency-list-ul'); ul.innerHTML = '';
         sysData.currencies.forEach(c => {
@@ -913,16 +978,10 @@ function doPost(e) {
         }
     }
 
-    /* 匯出設定檔功能（僅包含 GAS ID 與 密碼） */
     function exportConfigData() {
         const savedId = localStorage.getItem('order_sys_google_id') || document.getElementById('script-id').value.trim();
         const savedPass = localStorage.getItem('order_sys_password') || document.getElementById('sys-pass').value.trim();
-        
-        if(!savedId) {
-            alert("⚠️ 找不到已儲存的部署作業 ID，請輸入或連線成功後再匯出。");
-            return;
-        }
-
+        if(!savedId) { alert("⚠️ 找不到已儲存的部署作業 ID，請輸入或連線成功後再匯出。"); return; }
         const configObject = { scriptId: savedId, password: savedPass };
         const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(configObject, null, 2));
         const a = document.createElement('a'); 
