@@ -100,17 +100,187 @@
                         <button class="copy-btn" onclick="copyEmbeddedCode(this)">一鍵複製</button>
                         <pre class="code-block" id="embedded-script-code">function doGet(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  var data = sheet.getRange("A1").getValue();
+  
+  // 支援網頁端隨時單獨檢查「最後更新時間」
+  if (e.parameter.action === "checkVersion") {
+    var lastUpdateTime = sheet.getRange("A2").getValue();
+    return ContentService.createTextOutput(JSON.stringify({ lastUpdateTime: lastUpdateTime })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  // 原本的讀取邏輯 (讀取 A1) ➔ 升級：連同 A2 時間一起回傳
+  var data = sheet.getRange("A1").getValue(); 
+  var lastUpdateTime = sheet.getRange("A2").getValue();
   var result = {};
-  if (data) { result = { JSONData: data }; }
+  if (data) { 
+    result = { 
+      JSONData: data,
+      lastUpdateTime: lastUpdateTime // 讓網頁一登入就知道雲端的最新時間
+    }; 
+  }
   return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  
+  // 直接解析傳過來的純文字 JSON
   var postData = JSON.parse(e.postData.contents);
-  sheet.getRange("A1").setValue(postData.JSONData);
+  
+  // 網頁儲存前，檢查 A2 儲存格的時間
+  if (postData.action === "checkVersionBeforeSave") {
+    var cloudTime = new Date(sheet.getRange("A2").getValue()).getTime();
+    var clientTime = new Date(postData.clientLoadedTime).getTime();
+    
+    // 如果雲端時間大於網頁上次同步嘅時間，代表網頁資料過期
+    if (cloudTime > clientTime) {
+      var data = sheet.getRange("A1").getValue();
+      return ContentService.createTextOutput(JSON.stringify({ 
+        status: "outdated", 
+        message: "發現雲端數據已被更新！",
+        JSONData: data,
+        lastUpdateTime: sheet.getRange("A2").getValue()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  // 安全或直接儲存邏輯 (寫入 A1)
+  sheet.getRange("A1").setValue(postData.JSONData); 
+  
+  // 每次網頁更新儲存時，將當前時間寫入 A2 儲存格
+  sheet.getRange("A2").setValue(new Date().toISOString());
+  
+  // 自動觸發重新排版
+  parseJsonToTable();
+  
   return ContentService.createTextOutput(JSON.stringify({ status: "success" })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 建立 Google Sheet 自訂選單
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('📊 網購數據管理')
+    .addItem('手動更新：JSON ➔ 表格', 'parseJsonToTable')
+    .addItem('手動更新：表格 ➔ JSON', 'parseTableToJson')
+    .addToUi();
+}
+
+// 【監聽器】人手改 Google Sheet 欄位時觸發
+function onEdit(e) {
+  var range = e.range;
+  var row = range.getRow();
+  var col = range.getColumn();
+  
+  // 確保修改位置在資料區（第 4 行以下，B 欄到 R 欄之間）
+  if (row >= 4 && col >= 2 && col <= 18) {
+    parseTableToJson();
+  }
+}
+
+// 【同步一】讀取 A1 JSON ➔ 填入 B3 表格
+function parseJsonToTable() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var rawData = sheet.getRange("A1").getValue();
+  if (!rawData) return;
+  
+  var data = JSON.parse(rawData);
+  var orders = data.orders || [];
+  
+  var lastRow = sheet.getLastRow();
+  var lastColumn = sheet.getLastColumn();
+  if (lastRow >= 3) {
+    sheet.getRange(3, 2, lastRow - 2, Math.max(lastColumn - 1, 17)).clear(); 
+  }
+  
+  var headers = ["訂單ID", "日期", "項目名稱", "預支金額", "運費", "物流方式", "總物流狀態", "發票狀態", "已交單", "已報銷", "貨品名稱", "貨品價格", "貨品貨幣", "港幣價格", "購買平台", "貨品物流", "更新日期"];
+  sheet.getRange(3, 2, 1, headers.length).setValues([headers]);
+  
+  var rowDataList = [];
+  orders.forEach(function(order) {
+    var items = order.items || [];
+    items.forEach(function(item) {
+      rowDataList.push([
+        order.id, order.date, order.name, order.advancePay, order.shippingFee,
+        order.logisticsType, order.logisticsStatus, order.invoiceStatus,
+        order.submitted ? "✅" : "❌", order.claim ? "✅" : "❌",
+        item.name, item.price, item.currency, item.priceHKD, item.platform,
+        item.itemLogisticsStatus, item.updateDate
+      ]);
+    });
+  });
+  
+  if (rowDataList.length > 0) {
+    sheet.getRange(4, 2, rowDataList.length, headers.length).setValues(rowDataList);
+  }
+  
+  sheet.getRange(3, 2, 1, headers.length).setBackground("#2ecc71").setFontColor("white").setFontWeight("bold");
+  for (var i = 2; i <= headers.length + 1; i++) {
+    sheet.autoResizeColumn(i);
+  }
+}
+
+// 【同步二】讀取 B4 表格 ➔ 重新組裝打包回 A1 JSON，並更新 A2 時間
+function parseTableToJson() {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 4) return;
+  
+  var rawData = sheet.getRange("A1").getValue();
+  var baseData = { currencies: ["人民幣", "港幣"], orders: [], password: "623" };
+  if (rawData) {
+    try { baseData = JSON.parse(rawData); } catch(e) {}
+  }
+  
+  var tableValues = sheet.getRange(4, 2, lastRow - 3, 17).getValues();
+  var orderMap = {};
+  
+  tableValues.forEach(function(row) {
+    var orderId = String(row[0]).trim();
+    if (!orderId) return;
+    
+    if (!orderMap[orderId]) {
+      orderMap[orderId] = {
+        id: orderId,
+        date: row[1] ? (row[1] instanceof Date ? row[1].toISOString().split('T')[0] : String(row[1])) : "",
+        name: String(row[2]),
+        advancePay: Number(row[3]) || 0,
+        shippingFee: Number(row[4]) || 0,
+        logisticsType: String(row[5]),
+        logisticsStatus: String(row[6]),
+        invoiceStatus: String(row[7]),
+        submitted: row[8] === "✅" || row[8] === true || String(row[8]).toLowerCase() === "true",
+        claim: row[9] === "✅" || row[9] === true || String(row[9]).toLowerCase() === "true",
+        items: []
+      };
+      
+      var oldOrder = (baseData.orders || []).find(function(o) { return o.id === orderId; });
+      if (oldOrder) {
+        if (oldOrder.hasOwnProperty("claim")) orderMap[orderId]["claim"] = oldOrder["claim"];
+      }
+    }
+    
+    if (row[10]) {
+      orderMap[orderId].items.push({
+        name: String(row[10]),
+        price: String(row[11]),
+        currency: String(row[12]),
+        priceHKD: String(row[13]),
+        platform: String(row[14]),
+        itemLogisticsStatus: String(row[15]),
+        updateDate: row[16] ? (row[16] instanceof Date ? row[16].toISOString().split('T')[0] : String(row[16])) : ""
+      });
+    }
+  });
+  
+  var newOrdersArray = [];
+  for (var key in orderMap) {
+    if (orderMap.hasOwnProperty(key)) {
+      newOrdersArray.push(orderMap[key]);
+    }
+  }
+  baseData.orders = newOrdersArray;
+  
+  sheet.getRange("A1").setValue(JSON.stringify(baseData));
+  sheet.getRange("A2").setValue(new Date().toISOString());
 }</pre>
                     </div>
                 </li>
@@ -137,7 +307,24 @@ function doPost(e) {
             </div>
         </div>
 
-        <span style="padding:4px 6px; background:#fff; border:1px solid #cbd5e0; border-radius:4px; font-weight:bold;">*** 除特別註明外，所有金額均以港幣計算。***</span><br><br>
+        <span style="padding:4px 6px; background:#fff; border:1px solid #cbd5e0; border-radius:4px; font-weight:bold;">*** 除特別註明外，所有金額均以港幣計算。***</span>
+            <!-- 💡 新增：使用者自訂更新頻率選單 -->
+            <div style="display: inline-flex; align-items: center; gap: 5px; margin-left: 10px; background: #fff; padding: 4px 8px; border: 1px solid #cbd5e0; border-radius: 4px; font-size: 0.9rem;">
+                <span>🔄 自動更新：</span>
+                <select id="auto-refresh-select" onchange="changeRefreshInterval()" style="padding: 2px; font-size: 0.85rem; border-radius: 4px;">
+                    <option value="0">手動</option>
+                    <option value="5000">5 秒</option>
+                    <option value="15000" selected>15 秒</option> <!-- 預設 15 秒 -->
+                    <option value="30000">30 秒</option>
+                    <option value="60000">1 分鐘</option>
+                </select>
+            </div>
+            <!-- 💡 新增：顯示上次更新/同步時間 -->
+            <span id="last-update-time-display" style="margin-left: 10px; font-size: 0.9rem; color: #555; background: #edf2f7; padding: 4px 8px; border-radius: 4px; border: 1px solid #cbd5e0;">
+    ⏰ 上次同步：未同步
+            </span>
+            <span id="sync-status" style="color: green; font-weight: bold; margin-left: 10px;"></span>
+<br><br>
         <div class="flex-btn">
             <br>
             <button onclick="openOrderModal()">➕ 新增購物單</button>
@@ -146,7 +333,6 @@ function doPost(e) {
             <button onclick="closeAllTabs()" style="background-color: #e67e22;">❌ 關閉所有購物單</button>
             <button onclick="exportConfigData()">📤 匯出設定檔</button>
             <button class="secondary" onclick="logout()">🔒 登出</button>
-            <span id="sync-status" style="color: green; font-weight: bold; margin-left: 10px;"></span>
         </div>
 
         <div class="tab-bar" id="tab-bar">
@@ -333,14 +519,7 @@ function doPost(e) {
                 	<option value="美亞">美亞</option>
 		</select>
         </div>
-        <div class="form-group">
-    <label>國內物流單號 (選填)</label>
-    <div style="display: flex; gap: 8px;">
-        <input type="text" id="item-tracking-no" placeholder="請輸入中通、圓通、順豐等快遞單號" style="flex: 1;">
-        <button type="button" onclick="autoQueryLogistics()" style="background-color: #3498db; white-space: nowrap; padding: 0 10px;">🔍 查詢</button>
-    </div>
-    <div id="item-logistics-preview" style="font-size: 0.85rem; color: #7f8c8d; margin-top: 5px; max-height: 60px; overflow-y: auto; background: #f8f9fa; padding: 4px; border-radius: 4px; display: none;"></div>
-        </div>
+        <!-- 更新：已將物流方式欄位完全由貨物彈窗中移除 -->
         <div class="form-group">
             <label>貨物物流狀態*</label>
             <select id="item-logistics-status">
@@ -371,6 +550,8 @@ function doPost(e) {
 </div>
 
 <script>
+    let refreshTimer = null; // 💡 用來管理和清除定時器
+    let lastFetchTime = null;	// 新增一個變數，記錄網頁上一次從 Google Sheet 成功抓取資料的時間
     let config = { url: '', password: '' };
     let sysData = { currencies: ["人民幣", "港幣"], orders: [] };
     
@@ -456,7 +637,7 @@ function doPost(e) {
         await loadCloudData();
     }
 
-    async function loadCloudData() {
+async function loadCloudData() {
         try {
             let response = await fetch(config.url + "?action=read");
             if (response.ok) {
@@ -467,28 +648,112 @@ function doPost(e) {
                 sysData = JSON.parse(resJson.JSONData);
                 if(!sysData.currencies) sysData.currencies = ["人民幣", "港幣"];
                 if(config.password !== sysData.password && sysData.password !== undefined) {
-                    document.getElementById('setup-msg').innerText = "❌ 系統解鎖密碼錯誤！"; return;
+                    document.getElementById('setup-msg').innerText = "❌ 密碼錯誤！"; return;
                 }
+                
+                // 【修正】初始化時間：如果雲端有 A2 時間就用雲端的，沒有就用當前時間
+                if (resJson.lastUpdateTime) {
+                    lastFetchTime = new Date(resJson.lastUpdateTime);
+                } else {
+                    lastFetchTime = new Date();
+                    updateLastFetchTimeUI();
+                }
+                
                 enterSystem();
             } else { document.getElementById('setup-msg').innerText = "❌ 連線失敗，請檢查部署作業 ID。"; }
         } catch(e) { document.getElementById('setup-msg').innerText = "❌ 網路連線異常，請確認權限開放為「任何人」。"; }
     }
 
-    async function saveCloudData() {
-        showStatus("即時同步至 Google Drive 中...");
-        try {
-            await fetch(config.url, {
-                method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ JSONData: JSON.stringify(sysData) })
-            });
+async function saveCloudData() {
+    showStatus("正在檢查雲端數據版本...");
+    
+    // 打包準備檢查版本與儲存的資料
+    const payload = {
+        action: "checkVersionBeforeSave",
+        clientLoadedTime: lastFetchTime ? lastFetchTime.toISOString() : new Date(0).toISOString(),
+        JSONData: JSON.stringify(sysData)
+    };
+
+    try {
+        // 使用 'text/plain' 避開瀏覽器針對 file:// 協議的 OPTIONS Preflight 預檢限制
+        let response = await fetch(config.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' }, 
+            body: JSON.stringify(payload)
+        });
+        let result = await response.json();
+
+        if (result.status === "outdated") {
+            showStatus("數據衝突！雲端已被更新", true);
+            alert("⚠️ 偵測到雲端試算表已有最新修改！網頁已自動為你同步至最新版本，請檢查後重新執行剛才的儲存動作。");
+            
+            sysData = JSON.parse(result.JSONData); 
+            
+            renderOverviewTable(); 
+            if (currentActiveTab !== 'overview') {
+                renderOrderDetailPanel(currentActiveTab);
+            }
+            
+            lastFetchTime = new Date(result.lastUpdateTime); 
+            return; 
+        }
+
+        if (result.status === "success") {
             showStatus("雲端儲存完畢 (已同步)");
-        } catch (e) { showStatus("網絡錯誤，未能儲存", true); }
+            lastFetchTime = new Date(); 
+            updateLastFetchTimeUI();
+        } else {
+            showStatus("儲存失敗，後台回應異常", true);
+        }
+
+    } catch (e) { 
+        showStatus("網絡錯誤，未能儲存", true); 
+        console.error(e);
     }
+}
 
     function enterSystem() {
         document.getElementById('setup-section').classList.add('hidden');
         document.getElementById('main-section').classList.remove('hidden');
         renderOverviewTable();
+        
+        changeRefreshInterval();
+    }
+
+    // 【新增】背後靜默檢查雲端版本的 Function
+    async function checkCloudVersionSilently() {
+        if (!config.url || !lastFetchTime) return;
+        try {
+            let response = await fetch(config.url + "?action=checkVersion");
+            if (response.ok) {
+                let resJson = await response.json();
+                if (resJson.lastUpdateTime) {
+                    let cloudTime = new Date(resJson.lastUpdateTime).getTime();
+                    let clientTime = lastFetchTime.getTime();
+                    
+                    // 如果發現雲端時間新過本機時間，自動重新下載最新資料
+                    if (cloudTime > clientTime) {
+                        showStatus("偵測到雲端有新數據，正在自動背後同步...");
+                        let readResponse = await fetch(config.url + "?action=read");
+                        if (readResponse.ok) {
+                            let readJson = await readResponse.json();
+                            sysData = JSON.parse(readJson.JSONData);
+                            lastFetchTime = new Date(resJson.lastUpdateTime);
+                            updateLastFetchTimeUI(); // 💡 加呢句：定時器背後抓到新資料後更新 UI
+
+                            // 刷新畫面
+                            renderOverviewTable();
+                            if (currentActiveTab !== 'overview') {
+                                renderOrderDetailPanel(currentActiveTab);
+                            }
+                            showStatus("雲端數據已自動同步至最新");
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.log("背後檢查更新時發生網絡微調異常: ", e);
+        }
     }
 
     function logout() { location.reload(); }
@@ -777,24 +1042,17 @@ function doPost(e) {
 
         order.items.forEach((item, idx) => {
             const tr = document.createElement('tr');
-            let trackingHtml = '';
-                if (item.trackingNo) {
-                    trackingHtml = `<br><a href="javascript:void(0)" onclick="quickCheckLogistics('${item.trackingNo}')" style="font-size:0.8rem; color:#2980b9; text-decoration:underline;">單號: ${item.trackingNo} 🔍</a>`;
-}
-
-                tr.innerHTML = `
-                    <td><strong>${item.name}</strong>${trackingHtml}</td>
-                    <td>${item.price} ${item.currency}</td>
-                    <td>$${(parseFloat(item.priceHKD)||0).toFixed(2)}</td>
-                    <td>${item.platform}</td>
-                    <td><span style="padding:4px 8px; background:#e0f7fa; border-radius:4px; font-weight:bold; color:#006064;">${item.itemLogisticsStatus || '未發貨'}</span></td>
-                    <td style="color:#666; font-size:0.85rem;">${item.updateDate || order.date}</td>
-                    <td>
-                        <button class="item-action-btn" onclick="openItemModal(${idx})" style="background-color:#f39c12;">✏️ 修改</button>
-                        <button class="item-action-btn danger" onclick="deleteItemItem(${idx})">🗑️ 移除</button>
-                    </td>`;
-
-
+            tr.innerHTML = `
+                <td><strong>${item.name}</strong></td>
+                <td>${item.price} ${item.currency}</td>
+                <td>$${(parseFloat(item.priceHKD)||0).toFixed(2)}</td>
+                <td>${item.platform}</td>
+                <td><span style="padding:4px 8px; background:#e0f7fa; border-radius:4px; font-weight:bold; color:#006064;">${item.itemLogisticsStatus || '未發貨'}</span></td>
+                <td style="color:#666; font-size:0.85rem;">${item.updateDate || order.date}</td>
+                <td>
+                    <button class="item-action-btn" onclick="openItemModal(${idx})" style="background-color:#f39c12;">✏️ 修改</button>
+                    <button class="item-action-btn danger" onclick="deleteItemItem(${idx})">🗑️ 移除</button>
+                </td>`;
             tbody.appendChild(tr);
         });
     }
@@ -902,8 +1160,6 @@ function doPost(e) {
                 name: item.name, price: item.price, currency: item.currency, priceHKD: item.priceHKD,
                 platform: item.platform, itemLogisticsStatus: item.itemLogisticsStatus || '未發貨'
             });
-            document.getElementById('item-tracking-no').value = item.trackingNo || '';
-            document.getElementById('item-logistics-preview').style.display = 'none';
         } else {
             document.getElementById('item-modal-title').innerText = "➕ 新增貨物明細";
             document.getElementById('item-edit-index').value = "";
@@ -915,8 +1171,6 @@ function doPost(e) {
             document.getElementById('item-logistics-status').value = "未發貨";
             document.getElementById('item-update-date-text').innerText = getTodayString() + " (新項目)";
             document.getElementById('item-old-snapshot').value = "";
-            document.getElementById('item-tracking-no').value = '';
-            document.getElementById('item-logistics-preview').style.display = 'none';
         }
         document.getElementById('item-modal').classList.remove('hidden');
     }
@@ -939,8 +1193,6 @@ function doPost(e) {
 
         let finalUpdateDate = todayStr;
 
-        const trackingNo = document.getElementById('item-tracking-no').value.trim();
-
         if(idxStr !== "") {
             const idx = parseInt(idxStr);
             const oldSnapshotStr = document.getElementById('item-old-snapshot').value;
@@ -955,10 +1207,10 @@ function doPost(e) {
             }
             if(!hasChanged) { finalUpdateDate = order.items[idx].updateDate || todayStr; }
 
-            order.items[idx] = { name, price, currency, priceHKD, platform, itemLogisticsStatus, trackingNo, updateDate: finalUpdateDate };
+            order.items[idx] = { name, price, currency, priceHKD, platform, itemLogisticsStatus, updateDate: finalUpdateDate };
         } else {
             if(!order.items) order.items = [];
-            order.items.push({ name, price, currency, priceHKD, platform, itemLogisticsStatus, trackingNo, updateDate: todayStr });
+            order.items.push({ name, price, currency, priceHKD, platform, itemLogisticsStatus, updateDate: todayStr });
         }
 
         closeItemModal(); renderOrderDetailPanel(currentActiveTab); await saveCloudData();
@@ -1009,56 +1261,41 @@ function doPost(e) {
         a.setAttribute("download", "system_config.json"); 
         a.click();
     }
-// 1. 彈窗內部的測試查詢與自動變更狀態（直接由前端網頁發送請求，防止 Google IP 被擋）
-async function autoQueryLogistics() {
-    const trackingNo = document.getElementById('item-tracking-no').value.trim();
-    if (!trackingNo) return alert("請先輸入物流單號！");
 
-    const previewDiv = document.getElementById('item-logistics-preview');
-    previewDiv.style.display = 'block';
-    previewDiv.innerText = "正在獲取最新物流動態...";
-
-    try {
-        let response = await fetch(config.url + `?action=queryLogistics&trackingNo=${trackingNo}`);
-        let res = await response.json();
-        
-        if (res.status === "success" && res.data && res.data.transitList && res.data.transitList.length > 0) {
-            const latestLog = res.data.transitList[0];
-            previewDiv.innerHTML = `<strong>[${res.data.expressCompanyName || '快遞'}]</strong> ${latestLog.timeStr}<br>${latestLog.context}`;
-        
-            const statusSelect = document.getElementById('item-logistics-status');
-            if (res.data.isSigned === "1" || latestLog.context.includes("簽收") || latestLog.context.includes("已取件")) {
-                statusSelect.value = "已收貨";
-            } else {
-                statusSelect.value = "已發貨";
-            }
-        } else {
-            previewDiv.innerText = "❌ 未查到物流動態。";
+    // 💡 新增：當使用者改變自動更新頻率時觸發
+    function changeRefreshInterval() {
+        // 先清除舊嘅定時器，防止多個定時器疊加導致網頁變慢
+        if (refreshTimer) {
+            clearInterval(refreshTimer);
+            refreshTimer = null;
         }
-    } catch (e) {
-        previewDiv.innerText = "❌ 查詢失敗，網絡錯誤或後台接口異常。";
-    }
-}
 
-// 2. 主介面列表的快速點擊查詢
-async function quickCheckLogistics(trackingNo) {
-    if (!trackingNo) return;
-    try {
-        // 前端直連嘗試
-        let response = await fetch(`https://www.kuaidi100.com/query?type=yunda&postid=${trackingNo}`);
-        let res = await response.json();
-        if (res.status === "200" && res.data && res.data.length > 0) {
-            let msg = `【韻達快遞】單號：${trackingNo}\n\n`;
-            const logs = res.data.slice(0, 3);
-            logs.forEach(l => { msg += `🕒 ${l.time}\n📍 ${l.context}\n\n`; });
-            alert(msg);
+        const selectEl = document.getElementById('auto-refresh-select');
+        if (!selectEl) return;
+
+        const interval = parseInt(selectEl.value);
+
+        // 如果數值大於 0（即係唔係「手動」），就建立新嘅定時器
+        if (interval > 0) {
+            refreshTimer = setInterval(checkCloudVersionSilently, interval);
+            console.log(`[系統] 已啟動自動更新，頻率為: ${interval / 1000} 秒`);
         } else {
-            alert(`【韻達快遞】單號：${trackingNo}\n狀態：已發貨\n動態：2026-06-02 17:12:13 快遞已收寄，正等待下一站處理。`);
+            console.log("[系統] 自動更新已關閉，切換為全手動模式");
         }
-    } catch (e) {
-        alert(`【韻達快遞】單號：${trackingNo}\n狀態：已發貨 (動態更新中)`);
     }
-}
+
+    // 💡 新增：更新網頁上的「上次同步時間」文字
+    function updateLastFetchTimeUI() {
+        const displayEl = document.getElementById('last-update-time-display');
+        if (!displayEl || !lastFetchTime) return;
+        
+        // 格式化時間為 HH:MM:SS
+        const hours = String(lastFetchTime.getHours()).padStart(2, '0');
+        const minutes = String(lastFetchTime.getMinutes()).padStart(2, '0');
+        const seconds = String(lastFetchTime.getSeconds()).padStart(2, '0');
+        
+        displayEl.innerHTML = `⏰ 上次同步：<b>${hours}:${minutes}:${seconds}</b>`;
+    }
 </script>
 </body>
 </html>
